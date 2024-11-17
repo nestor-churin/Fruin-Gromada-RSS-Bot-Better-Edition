@@ -69,31 +69,37 @@ async def fetch_latest_news():
                         image_url = enclosure.get('url')
                         break
 
-            # Формуємо текст повідомлення
+            MAX_CAPTION_LENGTH = 1024
+            # Формуємо текст повідомлення без картинок
             message = (
                 f"*{title}*\n\n"
                 f"{pub_date}\n\n"
                 f"{cleaned_description}\n\n"
                 f"— Джерело ({link})"
             )
-            # Обрізаємо підпис, якщо він перевищує 1024 символи
-            MAX_CAPTION_LENGTH = 1024
-            description_with_source = f"{cleaned_description}\n\n— Джерело ({link})"  # Підпис з джерелом
-            if len(description_with_source) > MAX_CAPTION_LENGTH:
-                cleaned_description = cleaned_description[:MAX_CAPTION_LENGTH - 150] + ' . . .'
-                message = f"*{title}*\n\n{pub_date}\n\n{cleaned_description}\n\n— Джерело ({link})"
             
+            # Якщо весь текст повідомлення перевищує ліміт, обрізаємо опис
+            if len(message) > MAX_CAPTION_LENGTH:
+                # Обрізаємо лише частину опису, залишаючи місце для джерела
+                max_description_length = MAX_CAPTION_LENGTH - len(f"*{title}*\n\n{pub_date}\n\n— Джерело ({link})") - 3
+                cleaned_description = cleaned_description[:max_description_length] + '...'
+                
+                # Оновлюємо повідомлення з обрізаним описом
+                message = (
+                    f"*{title}*\n\n"
+                    f"{pub_date}\n\n"
+                    f"{cleaned_description}\n\n"
+                    f"— Джерело ({link})"
+                )
             
-            # Якщо картинка є, надсилаємо її разом з текстом
+            # Якщо є зображення
             if image_url:
                 # Надсилаємо зображення разом з текстовим підписом
                 await bot.send_photo(CHAT_ID, image_url, caption=message, parse_mode='Markdown')
             else:
                 # Якщо картинки немає, відправимо тільки текст
                 await bot.send_message(CHAT_ID, message, parse_mode='Markdown', disable_web_page_preview=True)
-            print('Знайдена новина та успішно відправлена!')
-        else:
-            print('Новини не знайдемо, перевірю через 5 хвилин..')
+
 
 #Перевірка на парсинг RSS сторінки. В кращому випадку видалити цю частину коду після налаштувань.
 @bot.message_handler(commamds=['test'])
