@@ -29,9 +29,11 @@ def clean_html(text):
     # Видаляємо всі HTML теги
     text = re.sub(r'<.*?>', '', text)
     
-    # Заміна спеціальних символів
+    # Заміна спеціальних символів. Оновлено на 1.0.2
     text = text.replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"').replace('&amp;', '&')
     text = text.replace('&rsquo;', "'").replace('&hellip;', '…').replace('&nbsp;', ' ')  # Додаткові символи
+    text = text.replace('&ndash;', '—')
+
 
     # Форматуємо текст (наприклад, робимо абзаци через нові рядки)
     text = text.replace('\n', ' ').replace('<br>', '\n').replace('<p>', '\n').replace('</p>', '\n')
