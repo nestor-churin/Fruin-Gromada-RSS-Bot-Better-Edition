@@ -32,7 +32,7 @@ def clean_html(text):
     # Заміна спеціальних символів. Оновлено на 1.0.2
     text = text.replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"').replace('&amp;', '&')
     text = text.replace('&rsquo;', "'").replace('&hellip;', '…').replace('&nbsp;', ' ')  # Додаткові символи
-    text = text.replace('&ndash;', '—')
+    text = text.replace('&ndash;', '—').replace('mdash;', '—')
 
 
     # Форматуємо текст (наприклад, робимо абзаци через нові рядки)
