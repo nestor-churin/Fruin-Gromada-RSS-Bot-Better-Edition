@@ -3,6 +3,7 @@ import feedparser
 import asyncio
 import json
 import os, re
+from datetime import datetime
 
 from config import *
 
@@ -26,94 +27,84 @@ def save_last_guid(last_guid):
 
 # Функція для очищення HTML
 def clean_html(text):
-    # Видаляємо всі HTML теги
     text = re.sub(r'<.*?>', '', text)
-    
-    # Заміна спеціальних символів. Оновлено на 1.0.2
     text = text.replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"').replace('&amp;', '&')
-    text = text.replace('&rsquo;', "'").replace('&hellip;', '…').replace('&nbsp;', ' ')  # Додаткові символи
-    text = text.replace('&ndash;', '—')
-
-
-    # Форматуємо текст (наприклад, робимо абзаци через нові рядки)
+    text = text.replace('&rsquo;', "'").replace('&hellip;', '…').replace('&nbsp;', ' ')
+    text = text.replace('&ndash;', '—').replace('&mdash;', '—')
+    text = text.replace('&laquo;', '«').replace('&raquo;', '»') 
     text = text.replace('\n', ' ').replace('<br>', '\n').replace('<p>', '\n').replace('</p>', '\n')
-    
-    # Заміна стилів та інших HTML елементів, які не підтримує Telegram API
-    text = re.sub(r'<.*?>', '', text)  # Ще раз видалимо теги, що могли залишитись
-    
+    text = re.sub(r'<.*?>', '', text)
     return text.strip()
 
-async def fetch_latest_news():
-    """Функція перевіряє RSS і відправляє новини в чат, якщо є нові."""
-    last_guid = read_last_guid()  # Читання останнього GUID з файлу
+async def fetch_and_send_news():
+    """Функція перевіряє RSS і надсилає новини."""
+    last_guid = read_last_guid()
     feed = feedparser.parse(RSS_URL)
+    new_entries = []
 
-    # Якщо є новини
-    if feed.entries:
-        entry = feed.entries[0]
-        if last_guid != entry.id:
-            # Оновлюємо останню новину
-            save_last_guid(entry.id)
+    # Якщо файл відсутній, беремо лише останню новину
+    if not last_guid:
+        if feed.entries:
+            new_entries = [feed.entries[0]]
+            save_last_guid(feed.entries[0].id)
+    else:
+        for entry in feed.entries:
+            if entry.id == last_guid:
+                break
+            new_entries.append(entry)
 
-            title = entry.title
-            pub_date = entry.published
-            link = entry.link
-            description = entry.get("full-text", "").strip()
+    new_entries.reverse()  # Щоб новини надсилалися у хронологічному порядку
 
-            # Очищаємо опис від HTML-тегів
-            cleaned_description = clean_html(description)
+    for entry in new_entries:
+        title = entry.title
+        pub_date = entry.published
+        link = entry.link
+        description = entry.get("full-text", "").strip()
+        cleaned_description = clean_html(description)
+        image_url = None
 
-            # Перевірка на наявність картинки в <enclosure>
-            image_url = None
-            if 'enclosures' in entry:
-                for enclosure in entry.enclosures:
-                    if enclosure.get('type', '').startswith('file'):
-                        image_url = enclosure.get('url')
-                        break
+        # Перевірка на наявність картинки
+        if 'enclosures' in entry:
+            for enclosure in entry.enclosures:
+                if enclosure.get('type', '').startswith('file'):
+                    image_url = enclosure.get('url')
+                    break
 
-            MAX_CAPTION_LENGTH = 1024
-            # Формуємо текст повідомлення без картинок
+        MAX_CAPTION_LENGTH = 1024
+        message = (
+            f"*{title}*\n\n"
+            f"{pub_date}\n\n"
+            f"{cleaned_description}\n\n"
+            f"— Джерело ({link})"
+        )
+
+        # Обрізка довгих повідомлень
+        if len(message) > MAX_CAPTION_LENGTH:
+            max_description_length = MAX_CAPTION_LENGTH - len(f"*{title}*\n\n{pub_date}\n\n— Джерело ({link})") - 3
+            cleaned_description = cleaned_description[:max_description_length] + '...'
             message = (
                 f"*{title}*\n\n"
                 f"{pub_date}\n\n"
                 f"{cleaned_description}\n\n"
                 f"— Джерело ({link})"
             )
-            
-            # Якщо весь текст повідомлення перевищує ліміт, обрізаємо опис
-            if len(message) > MAX_CAPTION_LENGTH:
-                # Обрізаємо лише частину опису, залишаючи місце для джерела
-                max_description_length = MAX_CAPTION_LENGTH - len(f"*{title}*\n\n{pub_date}\n\n— Джерело ({link})") - 3
-                cleaned_description = cleaned_description[:max_description_length] + '...'
-                
-                # Оновлюємо повідомлення з обрізаним описом
-                message = (
-                    f"*{title}*\n\n"
-                    f"{pub_date}\n\n"
-                    f"{cleaned_description}\n\n"
-                    f"— Джерело ({link})"
-                )
-            
-            # Якщо є зображення
-            if image_url:
-                # Надсилаємо зображення разом з текстовим підписом
-                await bot.send_photo(CHAT_ID, image_url, caption=message, parse_mode='Markdown')
-            else:
-                # Якщо картинки немає, відправимо тільки текст
-                await bot.send_message(CHAT_ID, message, parse_mode='Markdown', disable_web_page_preview=True)
 
+        # Надсилання повідомлення
+        if image_url:
+            await bot.send_photo(CHAT_ID, image_url, caption=message, parse_mode='Markdown')
+        else:
+            await bot.send_message(CHAT_ID, message, parse_mode='Markdown', disable_web_page_preview=True)
 
-#Перевірка на парсинг RSS сторінки. В кращому випадку видалити цю частину коду після налаштувань.
-@bot.message_handler(commamds=['test'])
-async def test(message):
-    await fetch_latest_news()
+        # Зберігаємо останній GUID
+        save_last_guid(entry.id)
+        await asyncio.sleep(send_news_interval)
 
 async def main():
     """Запуск регулярної перевірки RSS з інтервалом у 5 хвилин."""
     while True:
         try:
             print('Перевірка новин...')
-            await fetch_latest_news()
+            await fetch_and_send_news()
         except Exception as e:
             print(f"Помилка при отриманні новин: {e}")
         await asyncio.sleep(check_rss_timeout)
@@ -125,7 +116,6 @@ async def start_bot():
 # Запуск бота та перевірки новин
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    # Запускаємо обидва завдання в циклі подій
     loop.create_task(start_bot())  # Запуск бота
     loop.create_task(main())  # Запуск перевірки новин
     loop.run_forever()  # Чекаємо на завершення задач
